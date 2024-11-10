@@ -1,0 +1,180 @@
+services:
+  # Confluent Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - kafka-net
+
+  python-script:
+    build: .
+    container_name: python-script
+    # environment:
+    #   - KAFKA_BROKER=kafka-1:9092  # Kafka broker's address
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka-1  # Ensure Kafka is up before running the Python script
+    volumes:
+      - .:/app
+
+   # Kafka Broker 1
+  kafka-1:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-1
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-1:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_LISTENER_PORT=9092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_LISTENER_NAME_INTERNAL=INTERNAL
+      - KAFKA_LISTENER_INTERNAL_PORT=9093
+      - KAFKA_LISTENER_INTERNAL_HOST=kafka-1
+      - KAFKA_LISTENER_INTERNAL_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_LISTENER_INTERNAL_ADVERTISED_LISTENER=INTERNAL://kafka-1:9093
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_LISTENER_INTERNAL_MODE=PROXY
+      - KAFKA_JMX_PORT=9999  # JMX port for JMX Exporter to scrape
+    ports:
+      - "9092:9092"
+    networks:
+      - kafka-net
+    volumes:
+      - ./create-topics.sh:/etc/kafka/create-topics.sh
+    depends_on:
+      - zookeeper
+
+  # Kafka Broker 2
+  kafka-2:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-2
+    environment:
+      - KAFKA_BROKER_ID=2
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-2:9094
+      - KAFKA_LISTENER_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_LISTENER_PORT=9094
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9094
+      - KAFKA_LISTENER_NAME_INTERNAL=INTERNAL
+      - KAFKA_LISTENER_INTERNAL_PORT=9095
+      - KAFKA_LISTENER_INTERNAL_HOST=kafka-2
+      - KAFKA_LISTENER_INTERNAL_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_LISTENER_INTERNAL_ADVERTISED_LISTENER=INTERNAL://kafka-2:9095
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_LISTENER_INTERNAL_MODE=PROXY
+      - KAFKA_JMX_PORT=9998
+    ports:
+      - "9094:9094"
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+
+  # Kafka Broker 3
+  kafka-3:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-3
+    environment:
+      - KAFKA_BROKER_ID=3
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-3:9096
+      - KAFKA_LISTENER_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_LISTENER_PORT=9096
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9096
+      - KAFKA_LISTENER_NAME_INTERNAL=INTERNAL
+      - KAFKA_LISTENER_INTERNAL_PORT=9097
+      - KAFKA_LISTENER_INTERNAL_HOST=kafka-3
+      - KAFKA_LISTENER_INTERNAL_SECURITY_PROTOCOL=PLAINTEXT
+      - KAFKA_LISTENER_INTERNAL_ADVERTISED_LISTENER=INTERNAL://kafka-3:9097
+      - KAFKA_LISTENER_INTERNAL_MODE=PROXY
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_JMX_PORT=9997
+    ports:
+      - "9096:9096"
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+
+  # JMX Exporter for Kafka Brokers (Metrics Exporter)
+  jxm-exporter-1:
+    image: sscaling/jmx-prometheus-exporter
+    container_name: jmx-exporter-1
+    ports:
+      - "5555:5556"
+    environment:
+      SERVICE_PORT: 5556
+    volumes:
+      - ./jmx-exporter-1.yml:/opt/jmx_exporter/config.yml
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka-1
+
+  jxm-exporter-2:
+    image: sscaling/jmx-prometheus-exporter
+    container_name: jmx-exporter-2
+    ports:
+      - "5556:5556"
+    environment:
+      SERVICE_PORT: 5556
+    volumes:
+      - ./jmx-exporter-2.yml:/opt/jmx_exporter/config.yml
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka-2
+
+  jxm-exporter-3:
+    image: sscaling/jmx-prometheus-exporter
+    container_name: jmx-exporter-3
+    ports:
+      - "5557:5556"
+    environment:
+      SERVICE_PORT: 5556
+    volumes:
+      - ./jmx-exporter-3.yml:/opt/jmx_exporter/config.yml
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka-3
+
+
+  # Prometheus (optional, for collecting metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - kafka-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Set the admin password for Grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - kafka-net
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana-data:/var/lib/grafana # To persist Grafana data
+
+networks:
+  kafka-net:
+    driver: bridge
+
+volumes:
+  grafana-data:
+    driver: local
